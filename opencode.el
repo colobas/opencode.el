@@ -38,6 +38,7 @@
 ;; Load submodules
 (require 'opencode-descriptions)
 (require 'opencode-lsp)
+(require 'opencode-treesit)
 (require 'opencode-tools)
 (require 'opencode-agents)
 

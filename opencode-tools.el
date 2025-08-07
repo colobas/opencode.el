@@ -11,6 +11,7 @@
 (require 'gptel)
 (require 'opencode-descriptions)
 (require 'opencode-lsp)
+(require 'opencode-treesit)
 
 ;; Permission system variables
 (defcustom opencode-bash-permissions '(("*" . "ask"))
@@ -53,7 +54,8 @@ Can be 'allow', 'deny', or 'ask'."
 ;; Enhanced tools from llm.el with opencode descriptions
 
 (defun opencode-read-file (filepath &optional offset limit)
-  "Read file with line numbers, supporting offset and limit."
+  "Read file with line numbers, supporting offset and limit.
+Enhanced with tree-sitter syntax analysis when available."
   (let ((expanded-path (expand-file-name filepath)))
     (unless (file-exists-p expanded-path)
       (error "File does not exist: %s" expanded-path))
@@ -68,8 +70,12 @@ Can be 'allow', 'deny', or 'ask'."
              (numbered-content (mapconcat
                                (lambda (line)
                                  (format "%6d\t%s" (+ start (cl-position line selected-lines :test #'equal) 1) line))
-                               selected-lines "\n")))
-        numbered-content))))
+                               selected-lines "\n"))
+             ;; Add tree-sitter diagnostics if available
+             (diagnostics (opencode-treesit-get-diagnostics expanded-path)))
+        (if diagnostics
+            (concat numbered-content "\n\n--- Tree-sitter Analysis ---\n" diagnostics)
+          numbered-content)))))
 
 (defun opencode-run-command (command &optional working-dir timeout description)
   "Execute shell command with permission checking and enhanced output."
@@ -137,8 +143,9 @@ Can be 'allow', 'deny', or 'ask'."
   (let ((expanded-path (expand-file-name file-path)))
     (unless (file-exists-p expanded-path)
       (error "File does not exist: %s" expanded-path))
-    ;; Touch file for LSP
+    ;; Touch file for LSP and get tree-sitter analysis
     (opencode-lsp-touch-file expanded-path t)
+    (let ((treesit-diagnostics (opencode-treesit-get-diagnostics expanded-path)))
     (with-temp-buffer
       (insert-file-contents expanded-path)
       (let ((original-content (buffer-string))
@@ -166,8 +173,12 @@ Can be 'allow', 'deny', or 'ask'."
           (write-region (point-min) (point-max) expanded-path)
           (let ((base-output (format "Successfully edited file %s (%d replacement%s)"
                                      file-path count (if (= count 1) "" "s"))))
-            ;; Add LSP diagnostics if available
-            (opencode-lsp-enhance-edit-output expanded-path base-output)))))))
+            ;; Add diagnostics - prefer tree-sitter, fallback to LSP
+            (let ((diagnostics (or (opencode-treesit-get-diagnostics expanded-path)
+                                  (opencode-lsp-get-diagnostics-for-file expanded-path))))
+              (if diagnostics
+                  (concat base-output "\n\n--- Analysis ---\n" diagnostics)
+                base-output))))))))))
 
 ;; Todo system implementation
 (defvar opencode--todo-list nil
@@ -224,8 +235,12 @@ Can be 'allow', 'deny', or 'ask'."
     ;; Touch file for LSP
     (opencode-lsp-touch-file full-path t)
     (let ((base-output (format "Created file %s in %s" filename path)))
-      ;; Add LSP diagnostics if available
-      (opencode-lsp-enhance-write-output full-path base-output))))
+      ;; Add diagnostics - prefer tree-sitter, fallback to LSP
+      (let ((diagnostics (or (opencode-treesit-get-diagnostics full-path)
+                            (opencode-lsp-get-diagnostics-for-file full-path))))
+        (if diagnostics
+            (concat base-output "\n\n--- Analysis ---\n" diagnostics)
+          base-output)))))
 
 (defun opencode-read-documentation (symbol)
   "Read documentation for a function or variable."

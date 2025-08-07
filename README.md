@@ -691,9 +691,13 @@ M-x ert RET opencode-test-* RET
 - **Documentation**: Examples, tutorials, best practices
 - **Testing**: Unit tests, integration tests, performance benchmarks
 
+## Attribution
+
+This package uses code from [opencode](https://github.com/sst/opencode) which is licensed under the MIT License.
+
 ## License
 
-This project is licensed under the same terms as the original opencode project.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## Acknowledgments
 
