@@ -10,7 +10,6 @@
 
 (require 'gptel)
 (require 'opencode-descriptions)
-(require 'opencode-lsp)
 (require 'opencode-treesit)
 
 ;; Permission system variables
@@ -60,7 +59,7 @@ Enhanced with tree-sitter syntax analysis when available."
     (unless (file-exists-p expanded-path)
       (error "File does not exist: %s" expanded-path))
     ;; Touch file for LSP (warm up client)
-    (opencode-lsp-touch-file expanded-path nil)
+    (find-file expanded-path nil)
     (with-temp-buffer
       (insert-file-contents expanded-path)
       (let* ((lines (split-string (buffer-string) "\n"))
@@ -138,13 +137,43 @@ Enhanced with tree-sitter syntax analysis when available."
               "No matches found"
             (error "Grep search failed with exit code %d" exit-code)))))))
 
+(defun aider-make-repo-map (path)
+  "Create or refresh a repo map in an emacs buffer using aider's util."
+  (let* ((default-directory (expand-file-name path))
+         (buffer-name "*Aider Repo Map*")
+         (process-environment process-environment))
+
+    ;; Set OPENROUTER_API_KEY if not already set to prevent aider complaints
+    (unless (getenv "OPENROUTER_API_KEY")
+      (setenv "OPENROUTER_API_KEY" "placeholder"))
+
+    (with-temp-message (format "Generating repo map for: %s" path)
+      (let ((command "uvx aider --show-repo-map --exit --no-gitignore --no-check-update --no-analytics --no-pretty")
+            (output-buffer (get-buffer-create buffer-name)))
+
+        (with-current-buffer output-buffer
+          (erase-buffer)
+          (let ((exit-code (call-process-shell-command command nil t nil)))
+            (if (= exit-code 0)
+                (progn
+                  ;; Skip first 4 lines as mentioned in TODO
+                  (goto-char (point-min))
+                  (forward-line 4)
+                  (delete-region (point-min) (point))
+
+                  ;; Display the buffer
+                  (display-buffer output-buffer)
+                  (format "Repo map generated successfully in buffer %s" buffer-name))
+              (error "Failed to generate repo map (exit code %d): %s"
+                     exit-code (buffer-string)))))))))
+
 (defun opencode-edit-file (file-path old-string new-string &optional replace-all)
   "Sophisticated file editing with multiple strategies."
   (let ((expanded-path (expand-file-name file-path)))
     (unless (file-exists-p expanded-path)
       (error "File does not exist: %s" expanded-path))
     ;; Touch file for LSP and get tree-sitter analysis
-    (opencode-lsp-touch-file expanded-path t)
+    (find-file expanded-path t)
     (let ((treesit-diagnostics (opencode-treesit-get-diagnostics expanded-path)))
     (with-temp-buffer
       (insert-file-contents expanded-path)
@@ -173,9 +202,8 @@ Enhanced with tree-sitter syntax analysis when available."
           (write-region (point-min) (point-max) expanded-path)
           (let ((base-output (format "Successfully edited file %s (%d replacement%s)"
                                      file-path count (if (= count 1) "" "s"))))
-            ;; Add diagnostics - prefer tree-sitter, fallback to LSP
-            (let ((diagnostics (or (opencode-treesit-get-diagnostics expanded-path)
-                                  (opencode-lsp-get-diagnostics-for-file expanded-path))))
+            (let ((diagnostics (opencode-treesit-get-diagnostics expanded-path)
+                                  ))
               (if diagnostics
                   (concat base-output "\n\n--- Analysis ---\n" diagnostics)
                 base-output))))))))))
@@ -233,11 +261,11 @@ Enhanced with tree-sitter syntax analysis when available."
       (insert content)
       (write-file full-path))
     ;; Touch file for LSP
-    (opencode-lsp-touch-file full-path t)
+    (find-file full-path)
     (let ((base-output (format "Created file %s in %s" filename path)))
       ;; Add diagnostics - prefer tree-sitter, fallback to LSP
-      (let ((diagnostics (or (opencode-treesit-get-diagnostics full-path)
-                            (opencode-lsp-get-diagnostics-for-file full-path))))
+      (let ((diagnostics (opencode-treesit-get-diagnostics full-path)
+                            ))
         (if diagnostics
             (concat base-output "\n\n--- Analysis ---\n" diagnostics)
           base-output)))))
@@ -496,26 +524,19 @@ Enhanced with tree-sitter syntax analysis when available."
     :category "filesystem")
 
    (gptel-make-tool
+    :function #'aider-make-repo-map
+    :name "aider_make_repo_map"
+    :description "Create or refresh a repo map in an emacs buffer using aider's util."
+    :args (list '(:name "path" :type string :description "The path to the repo to map"))
+    :category "filesystem")
+
+   (gptel-make-tool
     :function #'opencode-search-web
     :name "search_web"
     :description opencode-search-web-description
     :args (list '(:name "query" :type string :description "The search query to execute against the search engine"))
-    :category "web")
+    :category "web"))
 
-   ;; LSP-specific tools
-   (gptel-make-tool
-    :function #'opencode-lsp-diagnostics
-    :name "lsp_diagnostics"
-    :description "Get LSP diagnostics (errors, warnings) for a file. Requires LSP to be running for the project."
-    :args (list '(:name "filepath" :type string :description "Path to the file to get diagnostics for"))
-    :category "lsp")
-
-   (gptel-make-tool
-    :function #'opencode-lsp-symbols
-    :name "lsp_symbols"
-    :description "Search for symbols in the workspace using LSP. Useful for finding functions, classes, variables across the project."
-    :args (list '(:name "query" :type string :description "Search query for symbols"))
-    :category "lsp"))
   "List of all opencode tools.")
 
 (defvar opencode-essential-tools
@@ -535,9 +556,7 @@ Enhanced with tree-sitter syntax analysis when available."
    (nth 4 opencode-tools)  ; grep
    (nth 5 opencode-tools)  ; edit
    (nth 6 opencode-tools)  ; todowrite
-   (nth 7 opencode-tools)  ; todoread
-   (nth 15 opencode-tools) ; lsp_diagnostics
-   (nth 16 opencode-tools)) ; lsp_symbols
+   (nth 7 opencode-tools))  ; todoread
   "Tools optimized for coding tasks.")
 
 (defvar opencode-full-tools opencode-tools

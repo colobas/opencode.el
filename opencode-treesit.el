@@ -127,22 +127,26 @@ Returns a list of (node . capture-name) pairs."
   (when-let ((tree (opencode-treesit-get-tree buffer)))
     (treesit-node-at (or point (point)) tree)))
 
-(defun opencode-treesit-get-diagnostics (&optional buffer)
-  "Get syntax errors as diagnostic information for BUFFER."
-  (when-let ((errors (opencode-treesit-get-error-nodes buffer)))
-    (with-current-buffer (or buffer (current-buffer))
-      (mapcar
-       (lambda (node)
-         (let ((start (treesit-node-start node))
-               (end (treesit-node-end node)))
-           `(:line ,(line-number-at-pos start)
-             :column ,(current-column)
-             :end-line ,(line-number-at-pos end)
-             :end-column ,(progn (goto-char end) (current-column))
-             :message "Syntax error"
-             :severity error
-             :source "tree-sitter")))
-       errors))))
+(defun opencode-treesit-get-diagnostics (&optional file-or-buffer)
+  "Get syntax errors as diagnostic information for FILE-OR-BUFFER."
+  (let ((buffer (if (stringp file-or-buffer)
+                    (or (find-buffer-visiting file-or-buffer)
+                        (find-file-noselect file-or-buffer))
+                  file-or-buffer)))
+    (when-let ((errors (opencode-treesit-get-error-nodes buffer)))
+      (with-current-buffer (or buffer (current-buffer))
+        (mapcar
+         (lambda (node)
+           (let ((start (treesit-node-start node))
+                 (end (treesit-node-end node)))
+             `(:line ,(line-number-at-pos start)
+               :column ,(current-column)
+               :end-line ,(line-number-at-pos end)
+               :end-column ,(progn (goto-char end) (current-column))
+               :message "Syntax error"
+               :severity error
+               :source "tree-sitter")))
+         errors)))))
 
 (defvar opencode-treesit--symbol-queries
   '((python . "[(function_definition name: (identifier) @function)
