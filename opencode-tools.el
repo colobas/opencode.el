@@ -59,7 +59,7 @@ Enhanced with tree-sitter syntax analysis when available."
     (unless (file-exists-p expanded-path)
       (error "File does not exist: %s" expanded-path))
     ;; Touch file for LSP (warm up client)
-    (find-file expanded-path nil)
+    (find-file-noselect expanded-path)
     (with-temp-buffer
       (insert-file-contents expanded-path)
       (let* ((lines (split-string (buffer-string) "\n"))
@@ -73,7 +73,18 @@ Enhanced with tree-sitter syntax analysis when available."
              ;; Add tree-sitter diagnostics if available
              (diagnostics (opencode-treesit-get-diagnostics expanded-path)))
         (if diagnostics
-            (concat numbered-content "\n\n--- Tree-sitter Analysis ---\n" diagnostics)
+            (concat numbered-content "\n\n--- Tree-sitter Analysis ---\n"
+                    (mapconcat
+                     (lambda (diag)
+                       (format "Line %d:%d-%d:%d | %s | %s | Source: %s"
+                               (plist-get diag :line)
+                               (plist-get diag :column)
+                               (plist-get diag :end-line)
+                               (plist-get diag :end-column)
+                               (plist-get diag :severity)
+                               (plist-get diag :message)
+                               (plist-get diag :source)))
+                     diagnostics "\n"))
           numbered-content)))))
 
 (defun opencode-run-command (command &optional working-dir timeout description)
@@ -111,7 +122,7 @@ Enhanced with tree-sitter syntax analysis when available."
 
 (defun opencode-glob (pattern &optional path)
   "Fast file pattern matching using find command."
-  (let ((search-path (or path default-directory)))
+  (let ((search-path (expand-file-name (or path default-directory))))
     (with-temp-buffer
       (let ((exit-code (call-process "find" nil t nil
                                     search-path
@@ -124,7 +135,7 @@ Enhanced with tree-sitter syntax analysis when available."
 
 (defun opencode-grep (pattern &optional include path)
   "Fast content search using ripgrep."
-  (let ((search-path (or path default-directory))
+  (let ((search-path (expand-file-name (or path default-directory)))
         (rg-args (list "--line-number" "--with-filename" "--color=never")))
     (when include
       (setq rg-args (append rg-args (list "--glob" include))))
@@ -173,7 +184,7 @@ Enhanced with tree-sitter syntax analysis when available."
     (unless (file-exists-p expanded-path)
       (error "File does not exist: %s" expanded-path))
     ;; Touch file for LSP and get tree-sitter analysis
-    (find-file expanded-path t)
+    (find-file-noselect expanded-path)
     (let ((treesit-diagnostics (opencode-treesit-get-diagnostics expanded-path)))
     (with-temp-buffer
       (insert-file-contents expanded-path)
@@ -184,7 +195,7 @@ Enhanced with tree-sitter syntax analysis when available."
         (goto-char (point-min))
         (while (search-forward old-string nil t)
           (setq count (1+ count)))
-        
+
         (cond
          ((= count 0)
           (error "Could not find text to replace in file %s" file-path))
@@ -213,7 +224,7 @@ Enhanced with tree-sitter syntax analysis when available."
   "Current todo list for the session.")
 
 (defun opencode-todowrite (todos)
-  "Write/update the todo list."
+  "Write/update the TODOS list."
   (setq opencode--todo-list todos)
   (format "Updated todo list with %d items" (length todos)))
 
@@ -228,14 +239,14 @@ Enhanced with tree-sitter syntax analysis when available."
   (mapcar 'buffer-name (buffer-list)))
 
 (defun opencode-read-buffer (buffer)
-  "Read contents of an Emacs buffer."
+  "Read contents of an Emacs BUFFER."
   (unless (buffer-live-p (get-buffer buffer))
     (error "Buffer %s is not live" buffer))
   (with-current-buffer buffer
     (buffer-substring-no-properties (point-min) (point-max))))
 
 (defun opencode-append-to-buffer (buffer text)
-  "Append text to an Emacs buffer."
+  "Append text to an Emacs BUFFER."
   (with-current-buffer (get-buffer-create buffer)
     (save-excursion
       (goto-char (point-max))
@@ -261,7 +272,7 @@ Enhanced with tree-sitter syntax analysis when available."
       (insert content)
       (write-file full-path))
     ;; Touch file for LSP
-    (find-file full-path)
+    (find-file-noselect full-path)
     (let ((base-output (format "Created file %s in %s" filename path)))
       ;; Add diagnostics - prefer tree-sitter, fallback to LSP
       (let ((diagnostics (opencode-treesit-get-diagnostics full-path)
@@ -282,23 +293,23 @@ Enhanced with tree-sitter syntax analysis when available."
             (documentation-property sym 'variable-documentation))
            (t
             (format "No documentation found for %s" symbol))))
-      (error (format "Error reading documentation for %s: %s" 
+      (error (format "Error reading documentation for %s: %s"
                      symbol (error-message-string err))))))
 
 (defun opencode-apply-diff-fenced (file-path diff-content &optional patch-options working-dir)
   "Apply a diff patch to a file."
   ;; Extract diff content from fenced blocks
-  (let ((extracted-diff 
+  (let ((extracted-diff
          (if (string-match "```\\(?:diff\\|patch\\)?\n\\(\\(?:.\\|\n\\)*?\\)\n```" diff-content)
              (match-string 1 diff-content)
            ;; If no fenced block found, try to use content as-is but warn
            (progn
              (message "Warning: No fenced diff block found, using content as-is")
              diff-content))))
-    
+
     ;; Continue with original logic using extracted diff
     (setq diff-content extracted-diff))
-  
+
   (let ((original-default-directory default-directory)
         (user-patch-options (if (and patch-options (not (string-empty-p patch-options)))
                                 (split-string patch-options " " t)
@@ -375,21 +386,31 @@ Enhanced with tree-sitter syntax analysis when available."
         (url-insert-file-contents url)
         (let ((json-response (json-read)))
           (mapconcat (lambda (result)
-                       (format "%s - %s\n%s" 
-                               (cdr (assoc 'title result)) 
-                               (cdr (assoc 'url result)) 
+                       (format "%s - %s\n%s"
+                               (cdr (assoc 'title result))
+                               (cdr (assoc 'url result))
                                (cdr (assoc 'content result))))
                      (cdr (assoc 'results json-response))
                      "\n\n"))))))
 
 ;; Tool definitions for gptel
 
+(defun trafilatura-fetch-page (url)
+  "Fetch and parse a web page into markdown format using Trafilatura."
+  ;; run this command: uvx trafilatura --output-format=markdown --with-metadata -u the_url
+  (with-temp-buffer
+    (let ((exit-code (call-process "uvx" nil t nil
+                        "trafilatura" "--output-format=markdown" "--with-metadata" "-u" url)))
+      (if (= exit-code 0)
+          (buffer-string)
+        (error "Failed to fetch page: %s" (buffer-string))))))
+
 (defvar opencode-tools
   (list
    ;; Enhanced existing tools
    (gptel-make-tool
     :function #'opencode-read-file
-    :name "read_file"
+    :name "Read"
     :description opencode-read-file-description
     :args (list '(:name "filepath" :type string :description "Path to the file to read")
                 '(:name "offset" :type number :description "Line number to start reading from (0-based)" :optional t)
@@ -398,7 +419,7 @@ Enhanced with tree-sitter syntax analysis when available."
 
    (gptel-make-tool
     :function #'opencode-run-command
-    :name "run_command"
+    :name "Bash"
     :description opencode-run-command-description
     :args (list '(:name "command" :type string :description "The shell command to execute")
                 '(:name "working_dir" :type string :description "Working directory" :optional t)
@@ -419,15 +440,15 @@ Enhanced with tree-sitter syntax analysis when available."
    ;; New tools from opencode
    (gptel-make-tool
     :function #'opencode-glob
-    :name "glob"
+    :name "Glob"
     :description opencode-glob-description
-    :args (list '(:name "pattern" :type string :description "Glob pattern to match files")
-                '(:name "path" :type string :description "Directory to search in" :optional t))
+    :args (list '(:name "pattern" :type string :description "Glob pattern to match files. (The `-name` argument of a `find` command")
+                '(:name "path" :type string :description "Directory to search in. Can use ~ in the path" :optional t))
     :category "filesystem")
 
    (gptel-make-tool
     :function #'opencode-grep
-    :name "grep"
+    :name "Grep"
     :description opencode-grep-description
     :args (list '(:name "pattern" :type string :description "Regex pattern to search for")
                 '(:name "include" :type string :description "File pattern to include" :optional t)
@@ -448,7 +469,7 @@ Enhanced with tree-sitter syntax analysis when available."
     :function #'opencode-todowrite
     :name "todowrite"
     :description opencode-todowrite-description
-    :args (list '(:name "todos" :type array :description "Array of todo items with id, content, status, priority"))
+    :args (list '(:name "todos" :type array :description "Array of todo items with id, content, status, priority" :items (:type string)))
     :category "task")
 
    (gptel-make-tool
@@ -484,7 +505,7 @@ Enhanced with tree-sitter syntax analysis when available."
    ;; Additional filesystem tools
    (gptel-make-tool
     :function #'opencode-list-directory
-    :name "list_directory"
+    :name "LS"
     :description opencode-list-directory-description
     :args (list '(:name "directory" :type string :description "The path to the directory to list"))
     :category "filesystem")
@@ -531,6 +552,13 @@ Enhanced with tree-sitter syntax analysis when available."
     :category "filesystem")
 
    (gptel-make-tool
+    :function #'trafilatura-fetch-page
+    :name "fetch_page"
+    :description "Use Trafilatura to fetch and parse a web page into a markdown format."
+    :args (list '(:name "url" :type string :description "The URL of the web page to fetch"))
+    :category "web")
+
+   (gptel-make-tool
     :function #'opencode-search-web
     :name "search_web"
     :description opencode-search-web-description
@@ -539,41 +567,9 @@ Enhanced with tree-sitter syntax analysis when available."
 
   "List of all opencode tools.")
 
-(defvar opencode-essential-tools
-  (list
-   (nth 0 opencode-tools)  ; read_file
-   (nth 1 opencode-tools)  ; run_command
-   (nth 3 opencode-tools)  ; glob
-   (nth 4 opencode-tools)  ; grep
-   (nth 5 opencode-tools)) ; edit
-  "Essential opencode tools for minimal setup.")
-
-(defvar opencode-coding-tools
-  (list
-   (nth 0 opencode-tools)  ; read_file
-   (nth 1 opencode-tools)  ; run_command
-   (nth 3 opencode-tools)  ; glob
-   (nth 4 opencode-tools)  ; grep
-   (nth 5 opencode-tools)  ; edit
-   (nth 6 opencode-tools)  ; todowrite
-   (nth 7 opencode-tools))  ; todoread
-  "Tools optimized for coding tasks.")
-
-(defvar opencode-full-tools opencode-tools
-  "All opencode tools for complete functionality.")
-
-;; Registration functions
 (defun opencode-register-tools ()
   "Register all opencode tools with gptel."
   (setq gptel-tools (append gptel-tools opencode-tools)))
-
-(defun opencode-register-essential-tools ()
-  "Register essential opencode tools with gptel."
-  (setq gptel-tools (append gptel-tools opencode-essential-tools)))
-
-(defun opencode-register-coding-tools ()
-  "Register coding-focused opencode tools with gptel."
-  (setq gptel-tools (append gptel-tools opencode-coding-tools)))
 
 (provide 'opencode-tools)
 

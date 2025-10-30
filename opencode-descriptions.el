@@ -13,20 +13,19 @@
 Assume this tool is able to read all files on the machine. If the User provides a path to a file assume that path is valid. It is okay to read a file that does not exist; an error will be returned.
 
 Usage:
-- The filePath parameter must be an absolute path, not a relative path
 - By default, it reads up to 2000 lines starting from the beginning of the file
 - You can optionally specify a line offset and limit (especially handy for long files), but it's recommended to read the whole file by not providing these parameters
 - Any lines longer than 2000 characters will be truncated
 - Results are returned using cat -n format, with line numbers starting at 1
 - This tool allows opencode to read images (eg PNG, JPG, etc). When reading an image file the contents are presented visually as opencode is a multimodal LLM.
-- You have the capability to call multiple tools in a single response. It is always better to speculatively read multiple files as a batch that are potentially useful. 
+- You have the capability to call multiple tools in a single response. It is always better to speculatively read multiple files as a batch that are potentially useful.
 - You will regularly be asked to read screenshots. If the user provides a path to a screenshot ALWAYS use this tool to view the file at the path. This tool will work with all temporary file paths like /var/folders/123/abc/T/TemporaryItems/NSIRD_screencaptureui_ZfB1tD/Screenshot.png
 - If you read a file that exists but has empty contents you will receive a system reminder warning in place of file contents.
 
 LSP Integration:
 - Automatically warms up the LSP client when reading code files
 - Enables better code understanding and symbol resolution for subsequent operations"
-  "Description for the read_file tool.")
+  "Description for the Read tool.")
 
 (defconst opencode-run-command-description
   "Executes a given bash command in a persistent shell session with optional timeout, ensuring proper handling and security measures.
@@ -38,7 +37,7 @@ Before executing the command, please follow these steps:
    - For example, before running \"mkdir foo/bar\", first use LS to check that \"foo\" exists and is the intended parent directory
 
 2. Command Execution:
-   - Always quote file paths that contain spaces with double quotes (e.g., cd \"path with spaces/file.txt\")
+   - Always quote file paths that contain spaces with double quotes (e.g., \"path with spaces/file.txt\")
    - Examples of proper quoting:
      - cd \"/Users/name/My Documents\" (correct)
      - cd /Users/name/My Documents (incorrect - will fail)
@@ -52,21 +51,21 @@ Usage notes:
   - You can specify an optional timeout in milliseconds (up to 600000ms / 10 minutes). If not specified, commands will timeout after 120000ms (2 minutes).
   - It is very helpful if you write a clear, concise description of what this command does in 5-10 words.
   - If the output exceeds 30000 characters, output will be truncated before being returned to you.
-  - VERY IMPORTANT: You MUST avoid using search commands like `find` and `grep`. Instead use Grep, Glob, or Task to search. You MUST avoid read tools like `cat`, `head`, `tail`, and `ls`, and use Read and LS to read files.
+  - VERY IMPORTANT: You MUST avoid using search commands like `find` and `grep`. Instead use Grep, Glob. You MUST avoid read tools like `cat`, `head`, `tail`, and `ls`, and use Read and LS to read files.
   - If you _still_ need to run `grep`, STOP. ALWAYS USE ripgrep at `rg` (or /usr/bin/rg) first, which all opencode users have pre-installed.
   - When issuing multiple commands, use the ';' or '&&' operator to separate them. DO NOT use newlines (newlines are ok in quoted strings).
-  - Try to maintain your current working directory throughout the session by using absolute paths and avoiding usage of `cd`. You may use `cd` if the User explicitly requests it."
-  "Description for the run_command tool.")
+  - Don't use `cd` unless the user requests it explicitly."
+  "Description for the Bash tool.")
 
 (defconst opencode-edit-description
   "Performs exact string replacements in files with LSP integration for error detection.
 
 Usage:
-- You must use your `Read` tool at least once in the conversation before editing. This tool will error if you attempt an edit without reading the file. 
+- You must use your `Read` tool at least once in the conversation before editing. This tool will error if you attempt an edit without reading the file.
 - When editing text from Read tool output, ensure you preserve the exact indentation (tabs/spaces) as it appears AFTER the line number prefix. The line number prefix format is: spaces + line number + tab. Everything after that tab is the actual file content to match. Never include any part of the line number prefix in the oldString or newString.
 - ALWAYS prefer editing existing files in the codebase. NEVER write new files unless explicitly required.
 - Only use emojis if the user explicitly requests it. Avoid adding emojis to files unless asked.
-- The edit will FAIL if `oldString` is not unique in the file. Either provide a larger string with more surrounding context to make it unique or use `replaceAll` to change every instance of `oldString`. 
+- The edit will FAIL if `oldString` is not unique in the file. Either provide a larger string with more surrounding context to make it unique or use `replaceAll` to change every instance of `oldString`.
 - Use `replaceAll` for replacing and renaming strings across the file. This parameter is useful if you want to rename a variable for instance.
 
 LSP Integration:
@@ -77,12 +76,12 @@ LSP Integration:
 
 (defconst opencode-glob-description
   "- Fast file pattern matching tool that works with any codebase size
-- Supports glob patterns like \"**/*.js\" or \"src/**/*.ts\"
+- Supports glob patterns like \"*.js\" or \"src/**/*.ts\"
 - Returns matching file paths sorted by modification time
 - Use this tool when you need to find files by name patterns
 - When you are doing an open ended search that may require multiple rounds of globbing and grepping, use the Agent tool instead
 - You have the capability to call multiple tools in a single response. It is always better to speculatively perform multiple searches as a batch that are potentially useful."
-  "Description for the glob tool.")
+  "Description for the Glob tool.")
 
 (defconst opencode-grep-description
   "- Fast content search tool that works with any codebase size
@@ -161,7 +160,7 @@ Usage:
   "Description for the todoread tool.")
 
 (defconst opencode-list-directory-description
-  "Lists files and directories in a given path. The path parameter must be an absolute path, not a relative path. You can optionally provide an array of glob patterns to ignore with the ignore parameter. You should generally prefer the Glob and Grep tools, if you know which directories to search."
+  "Lists files and directories in a given path. The path parameter must be an absolute path, not a relative path. You can optionally provide an array of Glob patterns to ignore with the ignore parameter. You should generally prefer the Glob and Grep tools, if you know which directories to search."
   "Description for the list_directory tool.")
 
 (defconst opencode-create-file-description
@@ -182,12 +181,12 @@ LSP Integration:
 
 (defconst opencode-apply-diff-description
   "Applies a diff (patch) to a specified file using fenced diff content. This is the PREFERRED method for modifying files as it is more token-efficient.
-The diff must be provided within fenced code blocks (```diff or ```patch) and be in unified format. 
-The LLM should generate the diff such that the file paths within the diff 
-(e.g., '--- a/filename' '+++ b/filename') are appropriate for the 'file_path' argument and chosen 'patch_options'. 
-Common 'patch_options' include: '' (empty, if paths in diff are exact or relative to current dir of file_path), 
-'-p0' (if diff paths are full or exactly match the target including prefixes like 'a/'), 
-'-p1' (if diff paths have one leading directory to strip, e.g., diff has 'a/src/file.c' and you want to patch 'src/file.c' from project root). 
+The diff must be provided within fenced code blocks (```diff or ```patch) and be in unified format.
+The LLM should generate the diff such that the file paths within the diff
+(e.g., '--- a/filename' '+++ b/filename') are appropriate for the 'file_path' argument and chosen 'patch_options'.
+Common 'patch_options' include: '' (empty, if paths in diff are exact or relative to current dir of file_path),
+'-p0' (if diff paths are full or exactly match the target including prefixes like 'a/'),
+'-p1' (if diff paths have one leading directory to strip, e.g., diff has 'a/src/file.c' and you want to patch 'src/file.c' from project root).
 Default options are '-N' (ignore already applied patches)."
   "Description for the apply_diff tool.")
 

@@ -14,7 +14,7 @@
 ;; via gptel integration. It provides:
 ;;
 ;; - Rich tool descriptions that guide LLM behavior
-;; - Advanced file operations (glob, grep, edit with multiple strategies)
+;; - Advanced file operations (Glob, Grep, edit with multiple strategies)
 ;; - Task management system (todowrite/todoread)
 ;; - Permission system for safe operations
 ;; - Agent presets with specialized system prompts
@@ -103,7 +103,7 @@ This provides core functionality without advanced features."
     (opencode-register-selected-tools opencode-enabled-tools)))
   (opencode-register-agents)
   (setq gptel-default-preset opencode-default-preset)
-  (message "OpenCode custom setup complete with %s tools." 
+  (message "OpenCode custom setup complete with %s tools."
            (if (listp opencode-enabled-tools)
                (format "%d" (length opencode-enabled-tools))
              (symbol-name opencode-enabled-tools))))
@@ -120,9 +120,9 @@ This provides core functionality without advanced features."
 (defun opencode-unload ()
   "Remove opencode tools from gptel."
   (interactive)
-  (setq gptel-tools 
+  (setq gptel-tools
         (cl-remove-if (lambda (tool)
-                        (member (plist-get tool :category) 
+                        (member (plist-get tool :category)
                                 '("opencode" "filesystem" "command" "task")))
                       gptel-tools))
   (message "OpenCode tools removed from gptel."))

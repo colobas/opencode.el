@@ -106,7 +106,7 @@ User Input → gptel → opencode Tools → Emacs/LSP/System → Results → LLM
 
 - **Intelligent Reading**: Line-numbered output with LSP integration for code understanding
 - **Sophisticated Editing**: Multiple replacement strategies with real-time error detection
-- **Pattern Matching**: Fast glob and grep operations using ripgrep
+- **Pattern Matching**: Fast Glob and grep operations using ripgrep
 - **Safe Creation**: File creation with automatic LSP startup and validation
 
 ### 🧠 LSP-Powered Intelligence
@@ -251,7 +251,7 @@ git clone https://github.com/opencode/opencode.el.git ~/.emacs.d/opencode.el
 (setq opencode-enabled-tools 'all)      ; All tools
 (setq opencode-enabled-tools 'coding)   ; Coding-focused
 (setq opencode-enabled-tools 'essential) ; Essential only
-(setq opencode-enabled-tools '("read_file" "edit" "run_command")) ; Custom list
+(setq opencode-enabled-tools '("Read" "edit" "Bash")) ; Custom list
 
 ;; Set default preset
 (setq opencode-default-preset 'opencode-coding)
@@ -288,7 +288,7 @@ SPC l s  ; gptel send
 ```
 User: Analyze the main.py file and suggest improvementsAssistant: I'll read the main.py file and analyze it for potential improvements.
 
-[Uses read_file tool to read main.py with line numbers]
+[Uses Read tool to read main.py with line numbers]
 [Uses lsp_diagnostics tool to check for errors]
 [Provides detailed analysis with specific suggestions]
 ```
@@ -298,7 +298,7 @@ User: Analyze the main.py file and suggest improvementsAssistant: I'll read the 
 User: Refactor the authentication system to use JWT tokensAssistant: I'll help you refactor the authentication system to use JWT tokens. Let me break this down into manageable tasks.
 
 [Uses todowrite to create structured task list]
-[Uses glob to find authentication-related files]
+[Uses Glob to find authentication-related files]
 [Uses grep to search for current auth patterns]
 [Uses edit to implement JWT changes step by step]
 [Shows LSP diagnostics after each change]
@@ -310,7 +310,7 @@ User: There's a memory leak in the user service, can you find it?Assistant: I'll
 
 [Uses lsp_symbols to find user service components]
 [Uses grep to search for memory allocation patterns]
-[Uses read_file to examine suspicious code sections]
+[Uses Read to examine suspicious code sections]
 [Provides detailed analysis of potential leak sources]
 ```
 
@@ -320,7 +320,7 @@ User: There's a memory leak in the user service, can you find it?Assistant: I'll
 
 | Tool | Description | LSP Integration |
 |------|-------------|-----------------|
-| `read_file` | Read files with line numbers and offset/limit support | ✅ Warms LSP client |
+| `Read` | Read files with line numbers and offset/limit support | ✅ Warms LSP client |
 | `edit` | Sophisticated string replacement with multiple strategies | ✅ Shows diagnostics after edit |
 | `create_file` | Create new files with content validation | ✅ Auto-starts LSP |
 | `list_directory` | List directory contents with enhanced descriptions | - |
@@ -330,7 +330,7 @@ User: There's a memory leak in the user service, can you find it?Assistant: I'll
 
 | Tool | Description | Backend |
 |------|-------------|---------|
-| `glob` | Fast file pattern matching | find/ripgrep |
+| `Glob` | Fast file pattern matching | find/ripgrep |
 | `grep` | Content search with regex support | ripgrep |
 | `lsp_symbols` | Workspace symbol search | LSP |
 
@@ -338,7 +338,7 @@ User: There's a memory leak in the user service, can you find it?Assistant: I'll
 
 | Tool | Description | Security |
 |------|-------------|----------|
-| `run_command` | Execute shell commands with timeout | ✅ Permission system |
+| `Bash` | Execute shell commands with timeout | ✅ Permission system |
 
 ### Task Management
 
@@ -373,7 +373,7 @@ opencode.el's LSP integration (`opencode-lsp.el`) provides a bridge between open
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
 │  opencode Tool  │───▶│  opencode-lsp   │───▶│    lsp-mode     │
 │                 │    │                 │    │                 │
-│ • read_file     │    │ • touch_file    │    │ • Language      │
+│ • Read     │    │ • touch_file    │    │ • Language      │
 │ • edit          │    │ • diagnostics   │    │   Servers       │
 │ • create_file   │    │ • symbols       │    │ • Workspace     │
 │                 │    │ • formatting    │    │ • Diagnostics   │
@@ -419,7 +419,7 @@ opencode.el provides specialized agent presets via gptel's preset system:
 (gptel-make-preset 'opencode-coding
   :description "Optimized for coding tasks"
   :system opencode-coding-system-prompt
-  :tools '("read_file" "edit" "run_command" "lsp_diagnostics" ...))
+  :tools '("Read" "edit" "Bash" "lsp_diagnostics" ...))
 ```
 
 ### Available Presets
@@ -456,7 +456,7 @@ Create your own specialized presets:
 (gptel-make-preset 'my-custom-preset
   :description "Custom preset for my workflow"
   :system "You are a specialized assistant for..."
-  :tools '("read_file" "edit" "run_command" "lsp_symbols"))
+  :tools '("Read" "edit" "Bash" "lsp_symbols"))
 ```
 
 ## Permission System
@@ -559,12 +559,12 @@ M-x gptel
 
 | Original llm.el Tool | opencode.el Equivalent | Enhancements |
 |---------------------|------------------------|--------------|
-| `read_file` | `read_file` | ✅ Line numbers, LSP integration |
-| `run_command` | `run_command` | ✅ Permission system, security |
+| `Read` | `Read` | ✅ Line numbers, LSP integration |
+| `Bash` | `Bash` | ✅ Permission system, security |
 | `edit_buffer` | `edit_buffer` | ✅ Better error handling |
 | `create_file` | `create_file` | ✅ LSP integration, validation |
 | `apply_diff_fenced` | `apply_diff_fenced` | ✅ Enhanced error handling |
-| - | `glob` | ✨ **NEW**: Pattern matching |
+| - | `Glob` | ✨ **NEW**: Pattern matching |
 | - | `grep` | ✨ **NEW**: Content search |
 | - | `edit` | ✨ **NEW**: Sophisticated editing |
 | - | `todowrite`/`todoread` | ✨ **NEW**: Task management |

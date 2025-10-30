@@ -116,7 +116,7 @@ Returns a list of (node . capture-name) pairs."
       (treesit-search-subtree
        tree
        (lambda (node)
-         (when (treesit-node-check node 'error)
+         (when (treesit-node-check node 'has-error)
            (push node errors))
          nil)
        nil t)
@@ -137,6 +137,7 @@ Returns a list of (node . capture-name) pairs."
       (with-current-buffer (or buffer (current-buffer))
         (mapcar
          (lambda (node)
+           (message "got node: %s" node)
            (let ((start (treesit-node-start node))
                  (end (treesit-node-end node)))
              `(:line ,(line-number-at-pos start)
@@ -144,7 +145,7 @@ Returns a list of (node . capture-name) pairs."
                :end-line ,(line-number-at-pos end)
                :end-column ,(progn (goto-char end) (current-column))
                :message "Syntax error"
-               :severity error
+               :severity 'error
                :source "tree-sitter")))
          errors)))))
 

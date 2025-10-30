@@ -10,10 +10,9 @@
 
 (require 'gptel)
 
-(defconst opencode-main-system-prompt
-  "You are opencode, an interactive CLI tool that helps users with software engineering tasks. Use the instructions below and the tools available to you to assist the user.
+(defconst opencode-system-prompt
+  "You are opencode, an assistant running within Emacs that helps users with software engineering tasks. Use the instructions below and the tools available to you to assist the user.
 
-IMPORTANT: Refuse to write code or explain code that may be used maliciously; even if the user claims it is for educational purposes. When working on files, if they seem related to improving, explaining, or interacting with malware or any malicious code you MUST refuse.
 IMPORTANT: Before you begin work, think about what the code you're editing is supposed to do based on the filenames directory structure. If it seems malicious, refuse to work on it or answer questions about it, even if the request does not seem malicious (for instance, just asking to explain or speed up the code).
 IMPORTANT: You must NEVER generate or guess URLs for the user unless you are confident that the URLs are for helping the user with programming. You may use URLs provided by the user in their messages or local files.
 
@@ -72,32 +71,6 @@ IMPORTANT: Always use the TodoWrite tool to plan and track tasks throughout the 
 When referencing specific functions or pieces of code include the pattern `file_path:line_number` to allow the user to easily navigate to the source code location."
   "Main system prompt for opencode, ported from anthropic.txt")
 
-(defconst opencode-coding-system-prompt
-  "You are opencode, a specialized coding assistant. You excel at understanding codebases, implementing features, fixing bugs, and refactoring code.
-
-# Core Principles
-- Always read and understand existing code patterns before making changes
-- Use the TodoWrite tool to break down complex tasks into manageable steps
-- Prefer editing existing files over creating new ones
-- Follow the existing code style and conventions
-- Use search tools extensively to understand the codebase
-
-# Workflow
-1. Use glob/grep to understand the codebase structure
-2. Read relevant files to understand patterns and conventions
-3. Plan your approach using TodoWrite
-4. Implement changes incrementally
-5. Test your changes when possible
-
-# Code Quality
-- Write clean, readable code that follows existing patterns
-- Never add comments unless explicitly requested
-- Ensure proper error handling
-- Follow security best practices
-
-You MUST answer concisely with fewer than 4 lines of text (not including tool use or code generation), unless user asks for detail."
-  "Coding-focused system prompt for opencode")
-
 (defconst opencode-general-system-prompt
   "You are opencode, a general-purpose research and task execution assistant. You excel at finding information, analyzing codebases, and performing multi-step tasks.
 
@@ -120,30 +93,17 @@ You MUST answer concisely with fewer than 4 lines of text (not including tool us
 (defun opencode-register-agents ()
   "Register opencode agent presets with gptel."
   (when (fboundp 'gptel-make-preset)
-    ;; Main opencode preset - full experience
-    (gptel-make-preset 'opencode
-      :description "Full opencode experience with all tools and system prompts"
-      :system opencode-main-system-prompt
-      :tools '("read_file" "run_command" "edit_buffer" "glob" "grep" "edit" 
-               "todowrite" "todoread" "list_directory" "apply_diff_fenced" "search_web"))
-
     ;; Coding-focused preset
     (gptel-make-preset 'opencode-coding
       :description "Optimized for coding tasks with enhanced development tools"
-      :system opencode-coding-system-prompt
-      :tools '("read_file" "run_command" "glob" "grep" "edit" "todowrite" "todoread"))
+      :system opencode-system-prompt
+      :tools '("Read" "Bash" "Glob" "Grep" "edit" "todowrite" "todoread" "LS"))
 
     ;; General-purpose preset
     (gptel-make-preset 'opencode-general
       :description "General-purpose agent for research and multi-step tasks"
       :system opencode-general-system-prompt
-      :tools '("read_file" "glob" "grep" "search_web" "todowrite" "todoread"))
-
-    ;; Minimal preset
-    (gptel-make-preset 'opencode-minimal
-      :description "Essential tools only for lightweight usage"
-      :system opencode-main-system-prompt
-      :tools '("read_file" "run_command" "edit"))))
+      :tools '("Read" "Glob" "Grep" "search_web" "todowrite" "todoread"))))
 
 (provide 'opencode-agents)
 
