@@ -137,16 +137,23 @@ Returns a list of (node . capture-name) pairs."
       (with-current-buffer (or buffer (current-buffer))
         (mapcar
          (lambda (node)
-           (message "got node: %s" node)
            (let ((start (treesit-node-start node))
                  (end (treesit-node-end node)))
-             `(:line ,(line-number-at-pos start)
-               :column ,(current-column)
-               :end-line ,(line-number-at-pos end)
-               :end-column ,(progn (goto-char end) (current-column))
-               :message "Syntax error"
-               :severity 'error
-               :source "tree-sitter")))
+             (let ((line (line-number-at-pos start))
+                   (column (save-excursion
+                             (goto-char start)
+                             (current-column)))
+                   (end-line (line-number-at-pos end))
+                   (end-column (save-excursion
+                                 (goto-char end)
+                                 (current-column))))
+               `(:line ,line
+                 :column ,column
+                 :end-line ,end-line
+                 :end-column ,end-column
+                 :message "Syntax error"
+                 :severity 'error
+                 :source "tree-sitter")))
          errors)))))
 
 (defvar opencode-treesit--symbol-queries

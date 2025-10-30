@@ -8,95 +8,201 @@
 
 ;;; Code:
 
+(require 'cl-lib)
+(require 'json)
+(require 'url)
+(require 'url-util)
+(require 'pp)
+(require 'seq)
+(require 'subr-x)
 (require 'gptel)
 (require 'opencode-descriptions)
 (require 'opencode-treesit)
 
 ;; Permission system variables
-(defcustom opencode-bash-permissions '(("*" . "ask"))
+(defcustom opencode-bash-permissions '(("*" . ask))
   "Permission settings for bash commands.
-Each entry is (PATTERN . ACTION) where:
-- PATTERN is a glob pattern matching commands
-- ACTION is 'allow', 'deny', or 'ask'"
-  :type '(alist :key-type string :value-type (choice (const allow) (const deny) (const ask)))
+Each entry is (PATTERN . ACTION) where PATTERN is a shell glob and ACTION is one of
+the symbols `allow`, `deny`, or `ask'. Later entries override earlier ones."
+  :type '(repeat (cons (string :tag "Glob pattern")
+                       (choice :tag "Action" (const allow) (const deny) (const ask))))
   :group 'opencode)
 
-(defcustom opencode-edit-permissions "ask"
-  "Permission setting for file edits.
-Can be 'allow', 'deny', or 'ask'."
+(defcustom opencode-edit-permissions 'ask
+  "Permission setting for file edits and file creation.
+Set to one of the symbols `allow`, `deny`, or `ask'."
   :type '(choice (const allow) (const deny) (const ask))
   :group 'opencode)
 
 ;; Helper functions
-(defun opencode--check-permission (command permissions)
-  "Check if COMMAND is allowed based on PERMISSIONS."
-  (let ((action (cdr (assoc "*" permissions))))
-    (dolist (entry permissions)
-      (when (string-match-p (car entry) command)
-        (setq action (cdr entry))))
-    (cond
-     ((eq action 'allow) t)
-     ((eq action 'deny) nil)
-     ((eq action 'ask) (y-or-n-p (format "Execute command: %s? " command)))
-     (t nil))))
+(defun opencode--normalize-permission (value)
+  "Normalize VALUE from the permissions alist to a symbol."
+  (cond
+   ((memq value '(allow deny ask)) value)
+   ((and (stringp value) (not (string-empty-p value)))
+    (pcase (intern (downcase value))
+      ('allow 'allow)
+      ('deny 'deny)
+      ('ask 'ask)
+      (_ 'ask)))
+   (t 'ask)))
 
-(defun opencode--add-line-numbers (content)
-  "Add line numbers to CONTENT in cat -n format."
-  (let ((lines (split-string content "\n"))
-        (line-num 1)
-        result)
-    (dolist (line lines)
-      (push (format "%6d\t%s" line-num line) result)
-      (setq line-num (1+ line-num)))
-    (string-join (nreverse result) "\n")))
+(defun opencode--match-pattern (pattern command)
+  "Return non-nil when COMMAND matches shell glob PATTERN."
+  (condition-case nil
+      (string-match-p (wildcard-to-regexp pattern) command)
+    (error nil)))
+
+(defun opencode--permission-action (command permissions)
+  "Return the action for COMMAND given PERMISSIONS."
+  (let ((action 'ask))
+    (dolist (entry permissions action)
+      (let ((pattern (car entry))
+            (value (opencode--normalize-permission (cdr entry))))
+        (when (and (stringp pattern)
+                   (opencode--match-pattern pattern command))
+          (setq action value))))))
+
+(defun opencode--check-permission (command permissions)
+  "Check if COMMAND is allowed based on PERMISSIONS.
+Returns t when the action is permitted, nil otherwise. Prompts the user when
+the action resolves to `ask'."
+  (pcase (opencode--permission-action command permissions)
+    ('allow t)
+    ('deny nil)
+    ('ask (y-or-n-p (format "Execute command: %s? " command)))
+    (_ t)))
+
+(defun opencode--edit-permission-allowed-p ()
+  "Return non-nil when edits are permitted under `opencode-edit-permissions'."
+  (pcase (opencode--normalize-permission opencode-edit-permissions)
+    ('allow t)
+    ('deny nil)
+    ('ask (y-or-n-p "Apply file modifications? "))
+    (_ t)))
+
+(defun opencode--truthy (value)
+  "Return non-nil when VALUE represents a truthy JSON boolean."
+  (not (memq value '(nil :json-false))))
+
+(defun opencode--format-diagnostics (diagnostics)
+  "Turn DIAGNOSTICS (a list of plists) into a printable string."
+  (when (and diagnostics (listp diagnostics))
+    (let ((lines
+           (cl-loop for diag in diagnostics
+                    when (and (plist-get diag :line)
+                              (plist-get diag :end-line)
+                              (plist-get diag :message))
+                    collect
+                    (format "Line %d:%d-%d:%d | %s | %s"
+                            (plist-get diag :line)
+                            (plist-get diag :column)
+                            (plist-get diag :end-line)
+                            (plist-get diag :end-column)
+                            (upcase (symbol-name (or (plist-get diag :severity) 'info)))
+                            (plist-get diag :message))))))
+      (when lines
+        (string-join lines "\n")))))
+
+(defun opencode--append-diagnostics (base-output diagnostics)
+  "Append DIAGNOSTICS string to BASE-OUTPUT when present."
+  (if (and diagnostics (not (string-empty-p diagnostics)))
+      (format "%s\n\n--- Tree-sitter Analysis ---\n%s" base-output diagnostics)
+    base-output))
+
+(defun opencode--todo->string (todos)
+  "Pretty-print TODOS for tool responses."
+  (with-temp-buffer
+    (pp todos (current-buffer))
+    (string-trim-right (buffer-string))))
+
+(defun opencode--ensure-directory (path)
+  "Ensure PATH is an existing directory."
+  (let ((expanded (expand-file-name path)))
+    (unless (file-directory-p expanded)
+      (error "Directory does not exist: %s" expanded))
+    expanded))
+
+(defun opencode--run-shell-command (command working-dir timeout)
+  "Execute COMMAND in WORKING-DIR with TIMEOUT (ms).
+Returns a cons of (EXIT-CODE . OUTPUT). Signals an error on timeout."
+  (let* ((timeout-ms (or timeout 120000))
+         (deadline (when (> timeout-ms 0)
+                     (+ (float-time) (/ timeout-ms 1000.0))))
+         (default-directory (if (and working-dir (not (string-empty-p working-dir)))
+                                (opencode--ensure-directory working-dir)
+                              default-directory))
+         (buffer (generate-new-buffer " *opencode-bash*"))
+         (exit-code 0)
+         (output ""))
+    (unwind-protect
+        (let ((process-environment process-environment)
+              (process (start-file-process-shell-command
+                        "opencode-bash" buffer command)))
+          (while (and (process-live-p process)
+                      (or (not deadline) (< (float-time) deadline)))
+            (accept-process-output process 0.1))
+          (when (and deadline (process-live-p process))
+            (kill-process process)
+            (error "Command timed out after %dms: %s" timeout-ms command))
+          (setq exit-code (process-exit-status process))
+          (setq output (with-current-buffer buffer
+                         (buffer-string))))
+      (when (buffer-live-p buffer)
+        (kill-buffer buffer)))
+    (cons exit-code output)))
+
 
 ;; Enhanced tools from llm.el with opencode descriptions
 
 (defun opencode-read-file (filepath &optional offset limit)
-  "Read file with line numbers, supporting offset and limit.
-Enhanced with tree-sitter syntax analysis when available."
-  (let ((expanded-path (expand-file-name filepath)))
+  "Read FILEPATH with optional OFFSET and LIMIT, returning numbered content."
+  (let* ((expanded-path (expand-file-name filepath))
+         (offset (max 0 (or offset 0)))
+         (limit (when limit (max 0 limit))))
     (unless (file-exists-p expanded-path)
       (error "File does not exist: %s" expanded-path))
-    ;; Touch file for LSP (warm up client)
     (find-file-noselect expanded-path)
     (with-temp-buffer
       (insert-file-contents expanded-path)
       (let* ((lines (split-string (buffer-string) "\n"))
-             (start (or offset 0))
-             (end (if limit (min (+ start limit) (length lines)) (length lines)))
-             (selected-lines (cl-subseq lines start end))
-             (numbered-content (mapconcat
-                               (lambda (line)
-                                 (format "%6d\t%s" (+ start (cl-position line selected-lines :test #'equal) 1) line))
-                               selected-lines "\n"))
-             ;; Add tree-sitter diagnostics if available
-             (diagnostics (opencode-treesit-get-diagnostics expanded-path)))
-        (if diagnostics
-            (concat numbered-content "\n\n--- Tree-sitter Analysis ---\n"
-                    (mapconcat
-                     (lambda (diag)
-                       (format "Line %d:%d-%d:%d | %s | %s | Source: %s"
-                               (plist-get diag :line)
-                               (plist-get diag :column)
-                               (plist-get diag :end-line)
-                               (plist-get diag :end-column)
-                               (plist-get diag :severity)
-                               (plist-get diag :message)
-                               (plist-get diag :source)))
-                     diagnostics "\n"))
-          numbered-content)))))
+             (total (length lines))
+             (end (min total (if limit (+ offset limit) total)))
+             (selected
+              (cl-loop for line in lines
+                       for idx from 0
+                       when (and (>= idx offset) (< idx end))
+                       collect (cons (1+ idx) line)))
+             (numbered-content
+              (if selected
+                  (mapconcat (lambda (entry)
+                               (format "%6d\t%s" (car entry) (cdr entry)))
+                             selected "\n")
+                "")))
+        (let* ((diag-str (opencode--format-diagnostics
+                          (opencode-treesit-get-diagnostics expanded-path)))
+               (content (opencode--append-diagnostics numbered-content diag-str)))
+          (if (< end total)
+              (format "%s\n\n(File has more lines. Use 'offset' to continue after line %d.)"
+                      content end)
+            content))))))
 
 (defun opencode-run-command (command &optional working-dir timeout description)
-  "Execute shell command with permission checking and enhanced output."
+  "Execute COMMAND in an optional WORKING-DIR with TIMEOUT and DESCRIPTION."
+  (unless (and (stringp command) (not (string-empty-p command)))
+    (error "Command must be a non-empty string"))
   (unless (opencode--check-permission command opencode-bash-permissions)
     (error "Command execution denied: %s" command))
-  (let ((default-directory (if (and working-dir (not (string-empty-p working-dir)))
-                              (expand-file-name working-dir)
-                            default-directory))
-        (process-environment process-environment))
-    (with-temp-message (format "Executing: %s" (or description command))
-      (shell-command-to-string command))))
+  (let* ((timeout-ms (when timeout (truncate timeout)))
+         (message-text (or description command)))
+    (with-temp-message (format "Executing: %s" message-text)
+      (pcase-let ((`(,status . ,output)
+                   (opencode--run-shell-command command working-dir timeout-ms)))
+        (if (= status 0)
+            (if (string-empty-p output)
+                "Command completed with no output."
+              output)
+          (error "Command failed (exit %d):\n%s" status output))))))
 
 (defun opencode-edit-buffer (buffer-name old-string new-string)
   "Enhanced buffer editing with better error handling."
@@ -121,32 +227,65 @@ Enhanced with tree-sitter syntax analysis when available."
 ;; New tools from opencode
 
 (defun opencode-glob (pattern &optional path)
-  "Fast file pattern matching using find command."
-  (let ((search-path (expand-file-name (or path default-directory))))
-    (with-temp-buffer
-      (let ((exit-code (call-process "find" nil t nil
-                                    search-path
-                                    "-name" pattern
-                                    "-type" "f")))
-        (if (= exit-code 0)
-            (let ((files (split-string (buffer-string) "\n" t)))
-              (string-join (sort files #'string<) "\n"))
-          (error "Glob pattern search failed"))))))
+  "Return files matching glob PATTERN under PATH (or current directory)."
+  (unless (and (stringp pattern) (not (string-empty-p pattern)))
+    (error "Glob pattern must be a non-empty string"))
+  (let* ((search-path (expand-file-name (or path default-directory)))
+         (limit 100)
+         (results '())
+         (use-rg (executable-find "rg")))
+    (unless (file-directory-p search-path)
+      (error "Directory does not exist: %s" search-path))
+    (if use-rg
+        (with-temp-buffer
+          (let ((default-directory search-path)
+                (args (list "--files" "--hidden" "--color=never" "--glob" pattern)))
+            (pcase (apply #'process-file "rg" nil t nil args)
+              (0 (setq results (split-string (buffer-string) "\n" t)))
+              (1 (setq results '()))
+              (code (error "Glob search failed with exit %d:\n%s"
+                           code (buffer-string))))))
+      (with-temp-buffer
+        (pcase (apply #'process-file "find" nil t nil
+                      search-path "-type" "f" "-name" pattern)
+          (0 (setq results (split-string (buffer-string) "\n" t)))
+          (code (error "Glob search failed with exit %d:\n%s"
+                       code (buffer-string))))))
+    (let* ((sorted (sort (cl-loop for file in results
+                                  for expanded = (if (file-name-absolute-p file)
+                                                     file
+                                                   (expand-file-name file search-path))
+                                  collect expanded)
+                         #'string-lessp))
+           (truncated (> (length sorted) limit))
+           (display-list (cl-subseq sorted 0 (min limit (length sorted))))
+           (body (if display-list
+                     (string-join display-list "\n")
+                   "No files found.")))
+      (if truncated
+          (format "%s\n\n(Results truncated to %d entries. Refine the pattern for more precision.)"
+                  body limit)
+        body))))
 
 (defun opencode-grep (pattern &optional include path)
-  "Fast content search using ripgrep."
-  (let ((search-path (expand-file-name (or path default-directory)))
-        (rg-args (list "--line-number" "--with-filename" "--color=never")))
+  "Search PATH for PATTERN using ripgrep. Optionally filter with INCLUDE glob."
+  (unless (executable-find "rg")
+    (error "ripgrep (rg) is required for the Grep tool"))
+  (unless (and (stringp pattern) (not (string-empty-p pattern)))
+    (error "Pattern must be a non-empty string"))
+  (let* ((default-directory (expand-file-name (or path default-directory)))
+         (args '("--color=never" "--line-number" "--no-heading" "--smart-case")))
+    (unless (file-directory-p default-directory)
+      (error "Directory does not exist: %s" default-directory))
     (when include
-      (setq rg-args (append rg-args (list "--glob" include))))
-    (setq rg-args (append rg-args (list pattern search-path)))
+      (setq args (append args (list "--glob" include))))
+    (setq args (append args (list pattern ".")))
     (with-temp-buffer
-      (let ((exit-code (apply #'call-process "rg" nil t nil rg-args)))
-        (if (= exit-code 0)
-            (buffer-string)
-          (if (= exit-code 1)
-              "No matches found"
-            (error "Grep search failed with exit code %d" exit-code)))))))
+      (pcase (apply #'process-file "rg" nil t nil args)
+        (0 (buffer-string))
+        (1 "No matches found.")
+        (code (error "ripgrep exited with %d:\n%s" code (buffer-string)))))))
+
 
 (defun aider-make-repo-map (path)
   "Create or refresh a repo map in an emacs buffer using aider's util."
@@ -179,58 +318,60 @@ Enhanced with tree-sitter syntax analysis when available."
                      exit-code (buffer-string)))))))))
 
 (defun opencode-edit-file (file-path old-string new-string &optional replace-all)
-  "Sophisticated file editing with multiple strategies."
-  (let ((expanded-path (expand-file-name file-path)))
+  "Replace OLD-STRING with NEW-STRING inside FILE-PATH.
+When REPLACE-ALL is truthy, every occurrence is replaced."
+  (unless (opencode--edit-permission-allowed-p)
+    (error "File edits denied by `opencode-edit-permissions'"))
+  (let* ((expanded-path (expand-file-name file-path))
+         (replace-all (opencode--truthy replace-all)))
     (unless (file-exists-p expanded-path)
       (error "File does not exist: %s" expanded-path))
-    ;; Touch file for LSP and get tree-sitter analysis
     (find-file-noselect expanded-path)
-    (let ((treesit-diagnostics (opencode-treesit-get-diagnostics expanded-path)))
     (with-temp-buffer
       (insert-file-contents expanded-path)
-      (let ((original-content (buffer-string))
-            (case-fold-search nil)
-            (count 0))
-        ;; Count matches
+      (let ((case-fold-search nil))
         (goto-char (point-min))
-        (while (search-forward old-string nil t)
-          (setq count (1+ count)))
-
-        (cond
-         ((= count 0)
-          (error "Could not find text to replace in file %s" file-path))
-         ((and (> count 1) (not replace-all))
-          (error "Found %d matches. Use replaceAll=true or provide more context to make the match unique" count))
-         (t
-          ;; Perform replacement
-          (goto-char (point-min))
-          (if replace-all
-              (while (search-forward old-string nil t)
-                (replace-match new-string t t))
-            (search-forward old-string)
-            (replace-match new-string t t))
-          ;; Write back to file
-          (write-region (point-min) (point-max) expanded-path)
-          (let ((base-output (format "Successfully edited file %s (%d replacement%s)"
-                                     file-path count (if (= count 1) "" "s"))))
-            (let ((diagnostics (opencode-treesit-get-diagnostics expanded-path)
-                                  ))
-              (if diagnostics
-                  (concat base-output "\n\n--- Analysis ---\n" diagnostics)
-                base-output))))))))))
+        (let ((count 0))
+          (while (search-forward old-string nil t)
+            (setq count (1+ count)))
+          (cond
+           ((= count 0)
+            (error "Could not find text to replace in %s" file-path))
+           ((and (> count 1) (not replace-all))
+            (error "Found %d matches. Use replaceAll=true or give more context." count))
+           (t
+            (goto-char (point-min))
+            (if replace-all
+                (while (search-forward old-string nil t)
+                  (replace-match new-string t t))
+              (search-forward old-string)
+              (replace-match new-string t t))
+            (let ((inhibit-message t))
+              (write-region (point-min) (point-max) expanded-path nil 'no-message))
+            (let* ((msg (format "Successfully edited %s (%d replacement%s)"
+                                file-path count (if (= count 1) "" "s")))
+                   (diag (opencode--format-diagnostics
+                          (opencode-treesit-get-diagnostics expanded-path))))
+              (opencode--append-diagnostics msg diag)))))))))
 
 ;; Todo system implementation
 (defvar opencode--todo-list nil
   "Current todo list for the session.")
 
 (defun opencode-todowrite (todos)
-  "Write/update the TODOS list."
+  "Write/update the TODOS list for the current Emacs session."
   (setq opencode--todo-list todos)
-  (format "Updated todo list with %d items" (length todos)))
+  (let ((count (length todos)))
+    (format "Updated todo list with %d item%s.\n\n%s"
+            count (if (= count 1) "" "s")
+            (opencode--todo->string todos))))
 
 (defun opencode-todoread ()
-  "Read the current todo list."
-  (or opencode--todo-list '()))
+  "Return the current todo list."
+  (if opencode--todo-list
+      (format "Current todo list:\n\n%s"
+              (opencode--todo->string opencode--todo-list))
+    "No todos are currently tracked."))
 
 ;; Additional helper functions for Emacs-specific tools
 
@@ -254,8 +395,11 @@ Enhanced with tree-sitter syntax analysis when available."
   (format "Appended text to buffer %s" buffer))
 
 (defun opencode-list-directory (directory)
-  "List contents of a directory."
-  (mapconcat #'identity (directory-files directory) "\n"))
+  "List contents of DIRECTORY."
+  (let* ((target (or directory default-directory))
+         (expanded (opencode--ensure-directory target))
+         (entries (directory-files expanded nil nil t)))
+    (mapconcat #'identity entries "\n")))
 
 (defun opencode-make-directory (parent name)
   "Create a directory."
@@ -266,20 +410,20 @@ Enhanced with tree-sitter syntax analysis when available."
     (error (format "Error creating directory %s in %s" name parent))))
 
 (defun opencode-create-file (path filename content)
-  "Create a new file with specified content."
-  (let ((full-path (expand-file-name filename path)))
+  "Create or overwrite FILENAME inside PATH with CONTENT."
+  (unless (opencode--edit-permission-allowed-p)
+    (error "File creation denied by `opencode-edit-permissions'"))
+  (let* ((directory (opencode--ensure-directory path))
+         (full-path (expand-file-name filename directory)))
     (with-temp-buffer
       (insert content)
-      (write-file full-path))
-    ;; Touch file for LSP
+      (let ((inhibit-message t))
+        (write-region (point-min) (point-max) full-path nil 'no-message)))
     (find-file-noselect full-path)
-    (let ((base-output (format "Created file %s in %s" filename path)))
-      ;; Add diagnostics - prefer tree-sitter, fallback to LSP
-      (let ((diagnostics (opencode-treesit-get-diagnostics full-path)
-                            ))
-        (if diagnostics
-            (concat base-output "\n\n--- Analysis ---\n" diagnostics)
-          base-output)))))
+    (let* ((msg (format "Created file %s in %s" filename directory))
+           (diag (opencode--format-diagnostics
+                  (opencode-treesit-get-diagnostics full-path))))
+      (opencode--append-diagnostics msg diag))))
 
 (defun opencode-read-documentation (symbol)
   "Read documentation for a function or variable."
@@ -366,8 +510,11 @@ Enhanced with tree-sitter syntax analysis when available."
                   (setq result-error (buffer-string)))))
 
             (if (= exit-status 0)
-                (format "Diff successfully applied to %s.\nPatch command options: %s\nPatch STDOUT:\n%s\nPatch STDERR:\n%s"
-                        target-file effective-patch-options result-output result-error)
+                (let* ((base (format "Diff successfully applied to %s.\nPatch command options: %s\nPatch STDOUT:\n%s\nPatch STDERR:\n%s"
+                                     target-file effective-patch-options result-output result-error))
+                       (diag (opencode--format-diagnostics
+                              (opencode-treesit-get-diagnostics target-file))))
+                  (opencode--append-diagnostics base diag))
               (error "Failed to apply diff to %s (exit status %s).\nPatch command options: %s\nPatch STDOUT:\n%s\nPatch STDERR:\n%s"
                      target-file exit-status effective-patch-options result-output result-error)))
         ;; Cleanup
@@ -404,7 +551,6 @@ Enhanced with tree-sitter syntax analysis when available."
       (if (= exit-code 0)
           (buffer-string)
         (error "Failed to fetch page: %s" (buffer-string))))))
-
 (defvar opencode-tools
   (list
    ;; Enhanced existing tools
@@ -442,7 +588,7 @@ Enhanced with tree-sitter syntax analysis when available."
     :function #'opencode-glob
     :name "Glob"
     :description opencode-glob-description
-    :args (list '(:name "pattern" :type string :description "Glob pattern to match files. (The `-name` argument of a `find` command")
+    :args (list '(:name "pattern" :type string :description "Glob pattern to match files")
                 '(:name "path" :type string :description "Directory to search in. Can use ~ in the path" :optional t))
     :category "filesystem")
 
@@ -469,7 +615,7 @@ Enhanced with tree-sitter syntax analysis when available."
     :function #'opencode-todowrite
     :name "todowrite"
     :description opencode-todowrite-description
-    :args (list '(:name "todos" :type array :description "Array of todo items with id, content, status, priority" :items (:type string)))
+    :args (list '(:name "todos" :type array :description "Array of todo items." :items (:type string)))
     :category "task")
 
    (gptel-make-tool
@@ -564,12 +710,58 @@ Enhanced with tree-sitter syntax analysis when available."
     :description opencode-search-web-description
     :args (list '(:name "query" :type string :description "The search query to execute against the search engine"))
     :category "web"))
-
   "List of all opencode tools.")
+
+(defconst opencode-all-tool-names
+  (mapcar (lambda (tool) (plist-get tool :name)) opencode-tools)
+  "Names of all opencode tools in registration order.")
+
+(defconst opencode-minimal-tool-names '("Read" "Bash" "LS")
+  "Minimal tool preset for lightweight usage.")
+
+(defconst opencode-essential-tool-names
+  '("Read" "Bash" "LS" "edit" "apply_diff_fenced" "create_file" "todowrite" "todoread")
+  "Essential tools suited for day-to-day editing tasks.")
+
+(defconst opencode-coding-tool-names
+  '("Read" "Bash" "Glob" "Grep" "edit" "apply_diff_fenced" "todowrite" "todoread"
+    "LS" "create_file" "read_documentation" "search_web")
+  "Coding-focused preset including search, editing, and planning tools.")
+
+(defun opencode--tool-by-name (name)
+  "Return the tool plist matching NAME."
+  (seq-find (lambda (tool) (string= (plist-get tool :name) name)) opencode-tools))
+
+(defun opencode--tool-present-p (name)
+  "Return non-nil when NAME is already present in `gptel-tools'."
+  (seq-some (lambda (tool) (string= (plist-get tool :name) name)) gptel-tools))
+
+(defun opencode--register-tools-by-names (names)
+  "Register tools listed in NAMES with gptel."
+  (dolist (name names)
+    (when-let ((tool (opencode--tool-by-name name)))
+      (unless (opencode--tool-present-p name)
+        (setq gptel-tools (append gptel-tools (list tool)))))))
 
 (defun opencode-register-tools ()
   "Register all opencode tools with gptel."
-  (setq gptel-tools (append gptel-tools opencode-tools)))
+  (opencode--register-tools-by-names opencode-all-tool-names))
+
+(defun opencode-register-minimal-tools ()
+  "Register the minimal opencode tool set with gptel."
+  (opencode--register-tools-by-names opencode-minimal-tool-names))
+
+(defun opencode-register-essential-tools ()
+  "Register the essential opencode tool set with gptel."
+  (opencode--register-tools-by-names opencode-essential-tool-names))
+
+(defun opencode-register-coding-tools ()
+  "Register the coding-focused opencode tool set with gptel."
+  (opencode--register-tools-by-names opencode-coding-tool-names))
+
+(defun opencode-register-selected-tools (tool-names)
+  "Register TOOL-NAMES with gptel."
+  (opencode--register-tools-by-names tool-names))
 
 (provide 'opencode-tools)
 

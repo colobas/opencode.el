@@ -9,6 +9,7 @@
 ;;; Code:
 
 (require 'gptel)
+(require 'opencode-tools)
 
 (defconst opencode-system-prompt
   "You are opencode, an assistant running within Emacs that helps users with software engineering tasks. Use the instructions below and the tools available to you to assist the user.
@@ -89,15 +90,36 @@ When referencing specific functions or pieces of code include the pattern `file_
 You MUST answer concisely with fewer than 4 lines of text (not including tool use or code generation), unless user asks for detail."
   "General-purpose system prompt for opencode")
 
+(defconst opencode-minimal-system-prompt
+  "You are opencode operating in a minimal tool mode. Focus on precision, keep answers short, and rely on the provided tools sparingly.
+
+# Approach
+- Use `Read` before editing to confirm the current contents.
+- Limit shell usage to clearly scoped commands and prefer other tools when available.
+- Keep responses concise and actionable."
+  "Minimal system prompt for opencode")
+
 ;; Agent preset definitions
 (defun opencode-register-agents ()
   "Register opencode agent presets with gptel."
   (when (fboundp 'gptel-make-preset)
+    ;; Full preset
+    (gptel-make-preset 'opencode
+      :description "Full opencode experience with the complete tool suite"
+      :system opencode-system-prompt
+      :tools opencode-all-tool-names)
+
     ;; Coding-focused preset
     (gptel-make-preset 'opencode-coding
       :description "Optimized for coding tasks with enhanced development tools"
       :system opencode-system-prompt
-      :tools '("Read" "Bash" "Glob" "Grep" "edit" "todowrite" "todoread" "LS"))
+      :tools opencode-coding-tool-names)
+
+    ;; Minimal preset
+    (gptel-make-preset 'opencode-minimal
+      :description "Minimal preset with just the core filesystem tools"
+      :system opencode-minimal-system-prompt
+      :tools opencode-minimal-tool-names)
 
     ;; General-purpose preset
     (gptel-make-preset 'opencode-general

@@ -27,6 +27,7 @@
 
 ;;; Code:
 
+(require 'cl-lib)
 (require 'gptel)
 
 ;; Customization group
@@ -44,10 +45,11 @@
 ;; Customization variables
 (defcustom opencode-enabled-tools 'all
   "Which tools to enable.
-Can be 'all, 'essential, 'coding, or a list of tool names."
+Can be 'all, 'essential, 'coding, 'minimal, or a list of tool names."
   :type '(choice (const :tag "All tools" all)
                  (const :tag "Essential tools only" essential)
                  (const :tag "Coding-focused tools" coding)
+                 (const :tag "Minimal tools" minimal)
                  (repeat :tag "Custom tool list" string))
   :group 'opencode)
 
@@ -71,10 +73,9 @@ This enables the full opencode experience with all tools and agents."
 
 ;;;###autoload
 (defun opencode-setup-minimal ()
-  "Set up opencode with essential tools only.
-This provides core functionality without advanced features."
+  "Set up opencode with the minimal tool set."
   (interactive)
-  (opencode-register-essential-tools)
+  (opencode-register-minimal-tools)
   (opencode-register-agents)
   (setq gptel-default-preset 'opencode-minimal)
   (message "OpenCode minimal setup complete. Use 'opencode-minimal' preset."))
@@ -96,25 +97,19 @@ This provides core functionality without advanced features."
    ((eq opencode-enabled-tools 'all)
     (opencode-register-tools))
    ((eq opencode-enabled-tools 'essential)
-    (opencode-register-essential-tools))
-   ((eq opencode-enabled-tools 'coding)
-    (opencode-register-coding-tools))
-   ((listp opencode-enabled-tools)
-    (opencode-register-selected-tools opencode-enabled-tools)))
+   (opencode-register-essential-tools))
+  ((eq opencode-enabled-tools 'coding)
+   (opencode-register-coding-tools))
+  ((eq opencode-enabled-tools 'minimal)
+   (opencode-register-minimal-tools))
+  ((listp opencode-enabled-tools)
+   (opencode-register-selected-tools opencode-enabled-tools)))
   (opencode-register-agents)
   (setq gptel-default-preset opencode-default-preset)
   (message "OpenCode custom setup complete with %s tools."
            (if (listp opencode-enabled-tools)
                (format "%d" (length opencode-enabled-tools))
              (symbol-name opencode-enabled-tools))))
-
-(defun opencode-register-selected-tools (tool-names)
-  "Register only the specified TOOL-NAMES with gptel."
-  (let ((selected-tools '()))
-    (dolist (tool opencode-tools)
-      (when (member (plist-get tool :name) tool-names)
-        (push tool selected-tools)))
-    (setq gptel-tools (append gptel-tools (nreverse selected-tools)))))
 
 ;;;###autoload
 (defun opencode-unload ()
@@ -123,7 +118,7 @@ This provides core functionality without advanced features."
   (setq gptel-tools
         (cl-remove-if (lambda (tool)
                         (member (plist-get tool :category)
-                                '("opencode" "filesystem" "command" "task")))
+                                '("opencode" "filesystem" "command" "task" "emacs" "web")))
                       gptel-tools))
   (message "OpenCode tools removed from gptel."))
 
