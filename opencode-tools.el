@@ -102,7 +102,7 @@ the action resolves to `ask'."
                             (upcase (symbol-name (or (plist-get diag :severity) 'info)))
                             (plist-get diag :message))))))
       (when lines
-        (string-join lines "\n")))))
+        (string-join lines "\n"))))
 
 (defun opencode--append-diagnostics (base-output diagnostics)
   "Append DIAGNOSTICS string to BASE-OUTPUT when present."
