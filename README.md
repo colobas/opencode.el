@@ -191,7 +191,7 @@ git clone https://github.com/colobas/opencode.el.git ~/.emacs.d/opencode.el
 
 ```elisp
 (use-package opencode
-  :straight (:host github :repo "opencode/opencode.el")
+  :straight (:host github :repo "colobas/opencode.el")
   :after gptel
   :config
   (opencode-setup))
