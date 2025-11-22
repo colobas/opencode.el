@@ -179,7 +179,9 @@ git clone https://github.com/colobas/opencode.el.git ~/.emacs.d/opencode.el
 
 ```elisp
 (use-package opencode
-  :load-path "~/.emacs.d/opencode.el"
+  :vc (:url "https://github.com/colobas/opencode.el"
+            :rev :newest
+            :branch "main")
   :after gptel
   :config
   (opencode-setup-coding))  ; or opencode-setup, opencode-setup-minimal
