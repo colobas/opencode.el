@@ -68,7 +68,6 @@ This enables the full opencode experience with all tools and agents."
   (interactive)
   (opencode-register-tools)
   (opencode-register-agents)
-  (setq gptel-default-preset opencode-default-preset)
   (message "OpenCode setup complete. Use '%s' preset for full experience." opencode-default-preset))
 
 ;;;###autoload
@@ -77,7 +76,6 @@ This enables the full opencode experience with all tools and agents."
   (interactive)
   (opencode-register-minimal-tools)
   (opencode-register-agents)
-  (setq gptel-default-preset 'opencode-minimal)
   (message "OpenCode minimal setup complete. Use 'opencode-minimal' preset."))
 
 ;;;###autoload
@@ -86,7 +84,6 @@ This enables the full opencode experience with all tools and agents."
   (interactive)
   (opencode-register-coding-tools)
   (opencode-register-agents)
-  (setq gptel-default-preset 'opencode-coding)
   (message "OpenCode coding setup complete. Use 'opencode-coding' preset."))
 
 ;;;###autoload
@@ -105,7 +102,6 @@ This enables the full opencode experience with all tools and agents."
   ((listp opencode-enabled-tools)
    (opencode-register-selected-tools opencode-enabled-tools)))
   (opencode-register-agents)
-  (setq gptel-default-preset opencode-default-preset)
   (message "OpenCode custom setup complete with %s tools."
            (if (listp opencode-enabled-tools)
                (format "%d" (length opencode-enabled-tools))
