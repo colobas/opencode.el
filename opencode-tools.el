@@ -100,7 +100,7 @@ the action resolves to `ask'."
                             (plist-get diag :end-line)
                             (plist-get diag :end-column)
                             (upcase (symbol-name (or (plist-get diag :severity) 'info)))
-                            (plist-get diag :message))))))
+                            (plist-get diag :message)))))
       (when lines
         (string-join lines "\n")))))
 
