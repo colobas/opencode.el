@@ -741,7 +741,7 @@ When REPLACE-ALL is truthy, every occurrence is replaced."
   "Coding-focused preset including search, editing, and planning tools.")
 
 (defun opencode--tool-by-name (name)
-  "Return the tool plist matching NAME."
+  "Return the tool (plist or struct) matching NAME."
   (seq-find (lambda (tool) (string= (opencode--get-tool-prop tool :name) name)) opencode-tools))
 
 (defun opencode--tool-present-p (name)
