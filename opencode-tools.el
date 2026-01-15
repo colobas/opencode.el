@@ -39,14 +39,20 @@ Set to one of the symbols `allow`, `deny`, or `ask'."
   "Get property PROP from TOOL (plist or gptel-tool struct).
 TOOL can be either a plist or a gptel-tool struct.
 PROP should be a keyword like :name or :category."
+  (unless (keywordp prop)
+    (error "PROP must be a keyword, got: %S" prop))
   ;; Try struct accessor first (for new gptel versions)
   (let* ((prop-name (substring (symbol-name prop) 1))
          (accessor (intern-soft (format "gptel-tool-%s" prop-name))))
     (if (and accessor (fboundp accessor))
-        (condition-case nil
+        (condition-case err
             (funcall accessor tool)
+          (wrong-type-argument
+           ;; If accessor fails with wrong type, fall back to plist-get (for old gptel versions)
+           (plist-get tool prop))
           (error
-           ;; If accessor fails, fall back to plist-get (for old gptel versions)
+           ;; Log unexpected errors for debugging
+           (message "Warning: Unexpected error in opencode--get-tool-prop: %S" err)
            (plist-get tool prop)))
       ;; No accessor found, try plist-get
       (plist-get tool prop))))
