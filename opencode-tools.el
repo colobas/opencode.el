@@ -50,7 +50,7 @@ PROP should be a keyword like :name or :category."
           (wrong-type-argument
            ;; If accessor fails with wrong type, fall back to plist-get (for old gptel versions)
            (plist-get tool prop))
-          ((error)
+          (error
            ;; Log unexpected errors for debugging and try plist-get as fallback
            (message "Warning: Unexpected error accessing %s from tool in opencode--get-tool-prop: %S" prop err)
            (condition-case nil
