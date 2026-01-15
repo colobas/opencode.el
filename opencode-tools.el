@@ -39,13 +39,17 @@ Set to one of the symbols `allow`, `deny`, or `ask'."
   "Get property PROP from TOOL (plist or gptel-tool struct).
 TOOL can be either a plist or a gptel-tool struct.
 PROP should be a keyword like :name or :category."
-  (if (listp tool)
-      (plist-get tool prop)
-    (let* ((prop-name (substring (symbol-name prop) 1))
-           (accessor (intern-soft (format "gptel-tool-%s" prop-name))))
-      (if (and accessor (fboundp accessor))
-          (funcall accessor tool)
-        nil))))
+  ;; Try struct accessor first (for new gptel versions)
+  (let* ((prop-name (substring (symbol-name prop) 1))
+         (accessor (intern-soft (format "gptel-tool-%s" prop-name))))
+    (if (and accessor (fboundp accessor))
+        (condition-case nil
+            (funcall accessor tool)
+          (error
+           ;; If accessor fails, fall back to plist-get (for old gptel versions)
+           (plist-get tool prop)))
+      ;; No accessor found, try plist-get
+      (plist-get tool prop))))
 
 (defun opencode--normalize-permission (value)
   "Normalize VALUE from the permissions alist to a symbol."
