@@ -40,7 +40,7 @@ Set to one of the symbols `allow`, `deny`, or `ask'."
 TOOL can be either a plist or a gptel-tool struct.
 PROP should be a keyword like :name or :category."
   (unless (keywordp prop)
-    (error "PROP must be a keyword, got: %S" prop))
+    (error "prop must be a keyword, got: %S" prop))
   ;; Try struct accessor first (for new gptel versions)
   (let* ((prop-name (substring (symbol-name prop) 1))
          (accessor (intern-soft (format "gptel-tool-%s" prop-name))))
@@ -52,7 +52,7 @@ PROP should be a keyword like :name or :category."
            (plist-get tool prop))
           (error
            ;; Log unexpected errors for debugging
-           (message "Warning: Unexpected error in opencode--get-tool-prop: %S" err)
+           (message "Warning: Unexpected error accessing %s from tool in opencode--get-tool-prop: %S" prop err)
            (plist-get tool prop)))
       ;; No accessor found, try plist-get
       (plist-get tool prop))))
