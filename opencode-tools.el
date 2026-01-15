@@ -35,6 +35,18 @@ Set to one of the symbols `allow`, `deny`, or `ask'."
   :group 'opencode)
 
 ;; Helper functions
+(defun opencode--get-tool-prop (tool prop)
+  "Get property PROP from TOOL (plist or gptel-tool struct).
+TOOL can be either a plist or a gptel-tool struct.
+PROP should be a keyword like :name or :category."
+  (if (listp tool)
+      (plist-get tool prop)
+    (let* ((prop-name (substring (symbol-name prop) 1))
+           (accessor (intern-soft (format "gptel-tool-%s" prop-name))))
+      (if (and accessor (fboundp accessor))
+          (funcall accessor tool)
+        nil))))
+
 (defun opencode--normalize-permission (value)
   "Normalize VALUE from the permissions alist to a symbol."
   (cond
@@ -713,7 +725,7 @@ When REPLACE-ALL is truthy, every occurrence is replaced."
   "List of all opencode tools.")
 
 (defconst opencode-all-tool-names
-  (mapcar (lambda (tool) (plist-get tool :name)) opencode-tools)
+  (mapcar (lambda (tool) (opencode--get-tool-prop tool :name)) opencode-tools)
   "Names of all opencode tools in registration order.")
 
 (defconst opencode-minimal-tool-names '("Read" "Bash" "LS")
@@ -730,11 +742,11 @@ When REPLACE-ALL is truthy, every occurrence is replaced."
 
 (defun opencode--tool-by-name (name)
   "Return the tool plist matching NAME."
-  (seq-find (lambda (tool) (string= (plist-get tool :name) name)) opencode-tools))
+  (seq-find (lambda (tool) (string= (opencode--get-tool-prop tool :name) name)) opencode-tools))
 
 (defun opencode--tool-present-p (name)
   "Return non-nil when NAME is already present in `gptel-tools'."
-  (seq-some (lambda (tool) (string= (plist-get tool :name) name)) gptel-tools))
+  (seq-some (lambda (tool) (string= (opencode--get-tool-prop tool :name) name)) gptel-tools))
 
 (defun opencode--register-tools-by-names (names)
   "Register tools listed in NAMES with gptel."
