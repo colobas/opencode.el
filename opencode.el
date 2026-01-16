@@ -113,7 +113,7 @@ This enables the full opencode experience with all tools and agents."
   (interactive)
   (setq gptel-tools
         (cl-remove-if (lambda (tool)
-                        (member (plist-get tool :category)
+                        (member (opencode--get-tool-prop tool :category)
                                 '("opencode" "filesystem" "command" "task" "emacs" "web")))
                       gptel-tools))
   (message "OpenCode tools removed from gptel."))
