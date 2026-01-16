@@ -154,7 +154,7 @@ Returns a list of (node . capture-name) pairs."
                  :message "Syntax error"
                  :severity 'error
                  :source "tree-sitter")))
-         errors)))))
+         errors))))))
 
 (defvar opencode-treesit--symbol-queries
   '((python . "[(function_definition name: (identifier) @function)
