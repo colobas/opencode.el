@@ -1,3 +1,8 @@
+# WARNING
+
+This was heavily vibe-coded. I've since merged some PRs from public forks, but I definitely didn't plan on actively maintaining this, it was mostly an experiment.
+If you're interested in taking the project over, feel free to reach out (see https://gpir.es for contacts) and I'll happily transfer ownership.
+
 # opencode.el
 
 A comprehensive port of [opencode](https://opencode.ai)'s sophisticated tools and agent system to Emacs via [gptel](https://github.com/karthink/gptel) integration.
