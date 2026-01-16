@@ -166,7 +166,7 @@ brew install ripgrep  # or apt install ripgrep
 #### Manual Installation
 
 ```bash
-git clone https://github.com/opencode/opencode.el.git ~/.emacs.d/opencode.el
+git clone https://github.com/colobas/opencode.el.git ~/.emacs.d/opencode.el
 ```
 
 ```elisp
@@ -179,7 +179,9 @@ git clone https://github.com/opencode/opencode.el.git ~/.emacs.d/opencode.el
 
 ```elisp
 (use-package opencode
-  :load-path "~/.emacs.d/opencode.el"
+  :vc (:url "https://github.com/colobas/opencode.el"
+            :rev :newest
+            :branch "main")
   :after gptel
   :config
   (opencode-setup-coding))  ; or opencode-setup, opencode-setup-minimal
@@ -189,7 +191,7 @@ git clone https://github.com/opencode/opencode.el.git ~/.emacs.d/opencode.el
 
 ```elisp
 (use-package opencode
-  :straight (:host github :repo "opencode/opencode.el")
+  :straight (:host github :repo "colobas/opencode.el")
   :after gptel
   :config
   (opencode-setup))
@@ -649,7 +651,7 @@ If tools are slow:
 
 ```bash
 # Clone the repository
-git clone https://github.com/opencode/opencode.el.git
+git clone https://github.com/colobas/opencode.el.git
 cd opencode.el
 
 # Install development dependencies
