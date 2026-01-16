@@ -298,7 +298,7 @@ Returns a cons of (EXIT-CODE . OUTPUT). Signals an error on timeout."
       (setenv "OPENROUTER_API_KEY" "placeholder"))
 
     (with-temp-message (format "Generating repo map for: %s" path)
-      (let ((command "uvx aider --show-repo-map --exit --no-gitignore --no-check-update --no-analytics --no-pretty")
+      (let ((command "uvx --from aider-chat aider --show-repo-map --exit --no-gitignore --no-check-update --no-analytics --no-pretty")
             (output-buffer (get-buffer-create buffer-name)))
 
         (with-current-buffer output-buffer
